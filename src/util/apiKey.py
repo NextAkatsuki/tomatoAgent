@@ -3,9 +3,9 @@ import os
 
 envStatus = os.getenv("ENV")
 
-if envStatus == "dev":
+if envStatus == "prod":
     load_dotenv(dotenv_path=".env", verbose=True)
-elif envStatus == "prod":
+elif envStatus == "dev":
     load_dotenv(dotenv_path=".env_dev", verbose=True)
 else:
     raise Exception("Wrong Env")
