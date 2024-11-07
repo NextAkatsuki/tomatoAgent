@@ -1,0 +1,2 @@
+sudo echo 'vm.overcommit_memory = 1' >> /etc/sysctl.conf
+sudo sysctl -p
