@@ -101,7 +101,7 @@ if __name__ == "__main__":
     else:
         content = []
 
-    redisClient.set(f"{userInfo["user_uid"]}:userContent", json.dumps(content))
+    redisClient.set(f"{userInfo['user_uid']}:userContent", json.dumps(content))
 
 
     toolRegist = toolsInitial(codeArchiveMongo, redisClient)
