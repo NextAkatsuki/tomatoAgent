@@ -4,7 +4,7 @@ sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 from prompt import system_prompt
 from tools import toolsInitial, codeArchive
 from util import getApiKey, ControlMongo
-import redis 
+
 
 import uuid
 
@@ -16,9 +16,8 @@ class Agent:
     def getChatHistory(self):
         return self.chatHistory
 
-    def runAgent(self, client, tool_regist, prompt, showProcess=False, toolList=[], streaming=False, chatHistory=None):
+    def runAgent(self, userId, client, tool_regist, prompt, showProcess=False, toolList=[], streaming=False, chatHistory=None):
         System_prompt = system_prompt.setSystemPrompt(tool_regist.get_tool_info(toolList))
-
         user_q = str(uuid.uuid4())
         system_answer = str(uuid.uuid4())
 
@@ -72,7 +71,7 @@ class Agent:
                 addChatHistory.append({ "role": "system", "content": result_response.split('Action Input:')[1],"type":"conversation" ,"key":system_answer})
                 self.chatHistory.extend(addChatHistory)
                 break
-            observation = tool(action_input[-1])
+            observation = tool(action_input[-1],userId=userId)
             if showProcess == True:
                 yield f"Observation: {observation}"
 
@@ -82,20 +81,30 @@ class Agent:
                 { "role": "system", "content": System_prompt, "type":"description" ,"key":system_answer},
                 *addChatHistory
             ]
-            print("test :", addChatHistory)
+
             self.chatHistory.extend(addChatHistory)
 
 
 if __name__ == "__main__":
+    import redis 
+    import pickle
+    import json
+
     chatMongo = ControlMongo(username=getApiKey("MONGODB_USERNAME"),password=getApiKey("MONGODB_PASSWORD"),dbName="tomato_server", collName="chatHistory")
     codeArchiveMongo = ControlMongo(username=getApiKey("MONGODB_USERNAME"),password=getApiKey("MONGODB_PASSWORD"),dbName="tomato_server", collName="codeArchive")
     client = OpenAI(api_key=getApiKey("OPENAI_API_KEY"))
+    redisClient = redis.Redis(host='redis_containerDev', port=6379)
     userInfo = {"user_uid":"adbfcbcb-5413-409c-a267-f43ee700575a", "chatId":"qqww", "content": []} #Redis
-    # codeArchiveObj = codeArchive.CodeArchive( 
-    #                                             userInfo, 
-    #                                             codeArchiveMongo
-    #                                             )#Redis
-    toolRegist = toolsInitial()
+    
+    if len(mongoResult := codeArchiveMongo.selectDB({"userId":userInfo["user_uid"]})) > 0:
+        content = mongoResult[0]["content"]
+    else:
+        content = []
+
+    redisClient.set(f"{userInfo["user_uid"]}:userContent", json.dumps(content))
+
+
+    toolRegist = toolsInitial(codeArchiveMongo, redisClient)
     #mongo를 외부에서 인스턴스하고 함수 내부에서는 호출만 할때 redis로 저장되는지 테스트해볼것
     agent = Agent()#Redis
     chatHistory = None
@@ -104,18 +113,18 @@ if __name__ == "__main__":
         chatHistory = result[0]["chatHistory"]
 
 
-    
-    # print(tool_regist.get_funcNames()) 
-    # print(system_prompt.setSystemPrompt(tool_regist.get_tool_info()))
     inputStr = ""
-    while inputStr != "q":
+    while 1:
         inputStr = input(">")
+        if inputStr == "q":
+            break
         for msg in agent.runAgent(  
+                                userInfo["user_uid"],
                                 client, 
                                 toolRegist,
                                 inputStr, 
-                                showProcess=False, 
-                                toolList=["search"], 
+                                showProcess=True, 
+                                toolList=["search_code"], 
                                 streaming=False,
                                 chatHistory=chatHistory
                                 ):

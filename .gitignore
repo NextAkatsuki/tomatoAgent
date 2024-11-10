@@ -22,3 +22,4 @@ Dockerfile
 generate_network.sh 
 buildImage.sh 
 createServer.sh 
+.venv

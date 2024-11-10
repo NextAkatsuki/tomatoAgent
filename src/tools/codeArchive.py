@@ -1,43 +1,36 @@
 from rank_bm25 import BM25Okapi
 from soylemma import Lemmatizer 
 from konlpy.tag import Okt
+import json
 import re
 import os
 import numpy as np
 import uuid
 import sys
+import pickle
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 from util import ControlMongo, getApiKey
 
 class CodeArchive:
-    def __init__(self, lemmatizer, okt, mongo, userContent, userId):
-        self.lemmatizer = lemmatizer
-        self.t = okt
+    def __init__(self, mongo, redis):
+        self.lemmatizer = Lemmatizer()
+        self.t = Okt()
         self.mongo = mongo
-        self.userContent = userContent
-        self.bm25 = None
-        self.userId = userId
+        self.redis = redis
 
-        # self.userId = userInfo["userId"]
-        # self.bmPicklePath = os.path.join("vectorStore", f"{self.userId}.pkl")
-        #pickle도 redis에서 가져오도록 수정할 것 
-        #그러면 init에서 할 필요없이 serach에서 pickle이랑 content넘기면 됨
-        # if len(mongoResult := mongo.selectDB({"userId":userId})) > 0:
-        #     self.content = mongoResult[0]["content"]
-        # else:
-        #     self.content = []
 
-        # if len(userInfo["content"]) > 0:
-        #     self.content = userInfo["content"]
-        # else:
-        #     self.content = []
+    def __getBm25(self, userId):
+        bmPicklePath = os.path.join("vectorStore", f"{userId}.pkl")
+        with open(bmPicklePath, "rb") as f:
+            userbm = pickle.load(f)
+        return userbm 
 
-        # self.bm25 = None
-        # if not os.path.exists(os.path.join(self.bmPicklePath)):
-        #     self.bm25 = None
-        # else:
-        #     with open(self.bmPicklePath, "rb") as f:
-        #         self.bm25 = pickle.load(f)
+    def __getUserContent(self, userId):
+        userContent = self.redis.get(f"{userId}:userContent") #없을 경우 None 반환
+        if userContent == None:
+            return []
+        else:
+            return json.loads(userContent.decode('utf-8'))
 
 
     def __findElementsWithSpecificValue(self, tupleList, targetValue):
@@ -68,64 +61,74 @@ class CodeArchive:
 
 
     # 이 함수는 초기 데이터 없을 때 한번에 데이터를 추가할 때만 사용할것
-    def addMultiContent(self, inputContents):
+    def addMultiContent(self, inputContents, userId):
+        userContent = self.__getUserContent(userId)
         tokenizedQuery = [self.__sentenceTokenizing(content["query"]) for content in inputContents]
+        bmPicklePath = os.path.join("vectorStore", f"{userId}.pkl")
 
         for i, inputContent in enumerate(inputContents):
             inputContent["token"] = tokenizedQuery[i]
             inputContent["id"] = str(uuid.uuid4())
-            self.userContent.append(inputContent)
+            userContent.append(inputContent)
 
-        self.bm25 = BM25Okapi(tokenizedQuery)
+        bm25 = BM25Okapi(tokenizedQuery)
 
-        # self.bm25 = bm25
+        self.redis.set(f"{userId}:userContent", json.dumps(userContent))
+        with open(bmPicklePath, "wb") as f:
+            pickle.dump(bm25, f)
 
-        # with open(self.bmPicklePath, "wb") as f:
-        #     pickle.dump(bm25, f)
-
-        self.mongo.updateDB({"userId":self.userId},{"content":self.userContent}, isUpsert=True)
-
+        self.mongo.updateDB({"userId":userId},{"content":userContent}, isUpsert=True)
 
 
-    def addContent(self, inputContent):
+
+    def addContent(self, inputContent, userId):
+        userContent = self.__getUserContent(userId)
+        bmPicklePath = os.path.join("vectorStore", f"{userId}.pkl")
+
         tokenizedQuery = self.__sentenceTokenizing(inputContent["query"])
-        tempContents = [content["query"] for content in self.userContent]
+        tempContents = [content["query"] for content in userContent]
         tempContents.append(tokenizedQuery) #기존 컨텐츠들 가져오고 이어붙이기
-        self.bm25 = BM25Okapi(tempContents) #컨텐츠 처음부터 다시 추가
+        bm25 = BM25Okapi(tempContents) #컨텐츠 처음부터 다시 추가
 
         inputContent["token"] = tokenizedQuery
         inputContent["id"] = str(uuid.uuid4())
-        self.userContent.append(inputContent)
+        userContent.append(inputContent)
 
-        # self.bm25 = bm25
+        self.redis.set(f"{userId}:userContent", json.dumps(userContent))
+        with open(bmPicklePath, "wb") as f:
+            pickle.dump(bm25, f)
 
-        # with open(self.bmPicklePath, "wb") as f:
-        #     pickle.dump(bm25, f)
-
-        self.mongo.updateDB({"userId":self.userId},{"content":self.userContent}, isUpsert=True)
-
+        self.mongo.updateDB({"userId":userId},{"content":userContent}, isUpsert=True)
 
 
-    def searchContent(self, query):
-        if self.bm25 is None:
+
+    def searchContent(self, query, userId):
+        bm25 = self.__getBm25(userId)
+        userContent = self.__getUserContent(userId)
+        if userContent == []:
+            return "내용이 없습니다"
+
+        if bm25 is None:
             raise Exception("bm25 is Empty! Insert Data!")
         tokenizedQuery = self.__sentenceTokenizing(query)
-        scores = self.bm25.get_scores(tokenizedQuery)#list
+        scores = bm25.get_scores(tokenizedQuery)#list
 
         maxScoreIndex = np.argsort(scores)[::-1][0]
 
-        return self.userContent[maxScoreIndex]["code"]
+        return userContent[maxScoreIndex]["code"]
 
-    def removeContent(self, id):
-        indexNum = self.__search_by_key_value_index(self.userContent, "id", id)
-        self.userContent.pop(indexNum)
+    def removeContent(self, id, userId):
+        #userContent 가져오는 코드 필요 
+        indexNum = self.__search_by_key_value_index(userContent, "id", id)
+        userContent.pop(indexNum)
         #bm25에서의 삭제도 필요함
-        self.mongo.updateDB({"userId":self.userId},{"content":userContent}, isUpsert=True)
+        self.mongo.updateDB({"userId":userId},{"content":userContent}, isUpsert=True)
 
         print("Remove Content Success!")
 
 #모든 query의 길이는 모두 균일하게 맞춰야함. 안그러면 내용이 긴 애의 점수가 더 높아짐
 if __name__ == "__main__":
+    import redis
     sample2 = [
         {
             "query":"""
@@ -204,9 +207,8 @@ if __name__ == "__main__":
         }
     ]
     archiveMongo = ControlMongo(username=getApiKey("MONGODB_USERNAME"),password=getApiKey("MONGODB_PASSWORD"),dbName="tomato_server", collName="codeArchive")
-    archive = CodeArchive(userInfo={"userId":"adbfcbcb-5413-409c-a267-f43ee700575a", "chatId":"asdf", "content": []},mongo=archiveMongo)
-    archive.addMultiContent(sample2)
+    redisClient = redis.Redis(host='redis_containerDev', port=6379)
+    archive = CodeArchive(mongo=archiveMongo, redis=redisClient)
+    archive.addMultiContent(sample, userId="adbfcbcb-5413-409c-a267-f43ee700575a")
     # archive.addContent(add_sample)
     # result = archive.searchContent("상태나 속성 이상을 걸어버리는 타입")
-
-    print(result)

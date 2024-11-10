@@ -1,6 +1,8 @@
 
 def setSystemPrompt(tools):
-    system = """Answer the following questions and obey the following commands as best you can.
+    system = """
+    Answer the following questions and obey the following commands as best you can.
+    Please do not translate the user's input into English but use it as it is.
 
     You have access to the following tools: 
     {0}

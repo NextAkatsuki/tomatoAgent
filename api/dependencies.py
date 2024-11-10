@@ -12,6 +12,9 @@ def mongo():
 def chatMongo():
     return ControlMongo(username=getApiKey("MONGODB_USERNAME"), password=getApiKey("MONGODB_PASSWORD"), dbName="tomato_server", collName="chatHistory")
 
+def codeArchiveMongo():
+    return ControlMongo(username=getApiKey("MONGODB_USERNAME"), password=getApiKey("MONGODB_PASSWORD"), dbName="tomato_server", collName="codeArchive")
+
 # OpenAI API 클라이언트 생성 함수
 def openaiClient():
     return OpenAI(api_key=getApiKey("OPENAI_API_KEY"))

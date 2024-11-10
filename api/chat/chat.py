@@ -10,9 +10,9 @@ from fastapi.responses import StreamingResponse
 
 import sys,os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from dependencies import mongo,chatMongo,openaiClient
+from dependencies import mongo,chatMongo,openaiClient,codeArchiveMongo
 from src.main.agent import Agent
-from src.util import getApiKey, ControlMongo
+from src.util import getApiKey
 from tools import toolsInitial
 
 from api.middleware import api_pass, chat_pass
@@ -27,7 +27,7 @@ toolRegist = None
 def startupEvent():
     global toolRegist#,client
     # client = OpenAI(api_key=getApiKey("OPENAI_API_KEY"))
-    toolRegist = toolsInitial()
+    toolRegist = toolsInitial(codeArchiveMongo, redisClient)
 
 @chat_api.post("/chat")
 async def chat(
@@ -69,6 +69,7 @@ async def chat(
 
         async def system_answer(agent):
             for msg in agent.runAgent(
+                                    userName,
                                     client,
                                     toolRegist,
                                     q,

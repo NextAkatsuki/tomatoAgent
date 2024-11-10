@@ -1,20 +1,21 @@
 from .registry import ToolRegistry 
-# from .codeArchive import CodeArchive
+from .codeArchive import CodeArchive
 from googleapiclient.discovery import build
 import os
 from util.apiKey import getApiKey
 
 
-def toolsInitial():
+def toolsInitial(mongo, redis):
     # 인스턴스 생성
     tool_regist = ToolRegistry()
+    codeArchive = CodeArchive(mongo, redis)
 
 
     @tool_regist.register(
         alias="search", 
         description="useful for when you need to answer questions about current events. You should ask targeted question",
         prompt="Answer by organizing it based on the searched content")
-    def __search(search_term):
+    def __search(search_term, userId=""):
         search_result = ""
         service = build("customsearch", "v1", developerKey=getApiKey("GOOGLE_API_KEY"))
         res = service.cse().list(q=search_term, cx=getApiKey("GOOGLE_CSE_ID"), num = 10).execute()
@@ -31,14 +32,14 @@ def toolsInitial():
     def __summarizeCode(code):
         pass
 
-    # @tool_regist.register(
-    #     alias="search_code", 
-    #     description="If you ask me about the summarized code, I will find it and answer it.",
-    #     prompt="Answer only the code that came out. If the resulting code is different from the question, answer 'No Inquiry'."
-    # )
-    # def __searchCode(query):
-    #     result = codeArchive.searchContent(query)
-    #     return result
+    @tool_regist.register(
+        alias="search_code", 
+        description="If you ask me about the summarized code, I will find it and answer it.",
+        prompt="Answer only the code that came out. If the resulting code is different from the question, answer 'No Inquiry'."
+    )
+    def __searchCode(query, userId=""):
+        result = codeArchive.searchContent(query, userId)
+        return result
 
     return tool_regist
 
