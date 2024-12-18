@@ -1,10 +1,14 @@
 import pymongo
 import random, string
+import os, sys
+sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
+#print(sys.path)
+from .apiKey import getApiKey
 
 class ControlMongo:
     def __init__(self, username, password, dbName, collName):
         try:
-            conn = pymongo.MongoClient(host="mongodb://mongodb", port=27017, username=username, password=password)
+            conn = pymongo.MongoClient(host=getApiKey("MONGODB_URL"), port=int(getApiKey("MONGODB_PORT")), username=username, password=password)
             db = conn.get_database(dbName)
             self.coll = db.get_collection(collName)
         except Exception as e:
@@ -48,11 +52,3 @@ class ControlMongo:
         return True
 
 
-
-if __name__ == "__main__":
-    mongo = ControlMongo(username="mongo",password="qwer1234",dbName="tomato_server", collName="Users")
-    result = mongo.selectDB({"name":"test"})[0]
-    result["chat_history"].append("end")
-    mongo.updateDB({"name":"test"}, {"chat_history": result["chat_history"]})
-    result = mongo.selectDB({"name":"test"})[0]
-    print(result)

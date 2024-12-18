@@ -6,7 +6,7 @@ from pprint import pprint
 # Redis에 연결
 r = redis.Redis(host='redis_containerDev', port=6379)
 
-#r.flushdb() # redis안에 값 전부 초기화 (필요시 사용)
+r.flushdb() # redis안에 값 전부 초기화 (필요시 사용)
 
 # alluser = r.keys("token*")
 # user = alluser[0]
@@ -14,12 +14,12 @@ r = redis.Redis(host='redis_containerDev', port=6379)
 # user=r.get(user)
 # print(user)
 
-userName = 'hehehe1'
-chat_uid = '45575972-de3c-4a77-9535-ecc4b3c8a3b1'
-key = f"{userName}:*"
-user = r.keys(key)
-info = r.get(user)
-pprint(info)
+#userName = 'hehehe1'
+#chat_uid = '45575972-de3c-4a77-9535-ecc4b3c8a3b1'
+#key = f"{userName}:*"
+#user = r.keys(key)
+#info = r.get(user)
+#pprint(info)
 # import json
 # chatHistory = json.loads(chatHistory.decode('utf-8'))
 # from pprint import pprint

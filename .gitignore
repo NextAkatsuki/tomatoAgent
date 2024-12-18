@@ -23,3 +23,5 @@ generate_network.sh
 buildImage.sh 
 createServer.sh 
 .venv
+GPTArchive.md
+__pycache__

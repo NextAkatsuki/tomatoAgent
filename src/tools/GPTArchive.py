@@ -9,20 +9,24 @@ import uuid
 import sys
 import pickle
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
-from util import ControlMongo, getApiKey
+from util import ControlMongo, getApiKey, ControlMinio
 
-class CodeArchive:
-    def __init__(self, mongo, redis):
+class GPTArchive:
+    def __init__(self, mongo, redis, minio):
         self.lemmatizer = Lemmatizer()
         self.t = Okt()
         self.mongo = mongo
         self.redis = redis
+        self.minio = minio
 
 
-    def __getBm25(self, userId):
-        bmPicklePath = os.path.join("vectorStore", f"{userId}.pkl")
-        with open(bmPicklePath, "rb") as f:
-            userbm = pickle.load(f)
+    def __getBm25(self, userId, category):
+        # bmPicklePath = os.path.join("vectorStore", f"{userId}.pkl")
+        # with open(bmPicklePath, "rb") as f:
+        #     userbm = pickle.load(f)
+        minioData = self.minio.getItem(userId, category)
+        userbm = pickle.loads(minioData)
+        
         return userbm 
 
     def __getUserContent(self, userId):
@@ -41,17 +45,17 @@ class CodeArchive:
         stopwords = ['의','가','이','은','들','는','좀','잘','걍','과','도','를','으로','자','에','와','한','하다','을']
         query = re.sub(r"[^\uAC00-\uD7A30-9a-zA-Z\s]", "", query)
 
-        lemmSentence = []
+        lemmSentence = set()
         for text in self.t.pos(query):
             if text[0] in stopwords or '\n' in text[0]:
                 continue
             resultLemm = self.__findElementsWithSpecificValue(self.lemmatizer.lemmatize(text[0]),text[1])
             if len(resultLemm) == 0:
-                lemmSentence.append(f"{text[0]}")
+                lemmSentence.add(f"{text[0]}")
             else:
-                lemmSentence.append(f"{resultLemm[0]}")
+                lemmSentence.add(f"{resultLemm[0]}")
 
-        return lemmSentence
+        return list(lemmSentence)
 
     def __search_by_key_value_index(self, data, key, value):
         for index, item in enumerate(data):
@@ -60,50 +64,55 @@ class CodeArchive:
         return -1  # 값이 없을 경우 -1 반환
 
 
-    # 이 함수는 초기 데이터 없을 때 한번에 데이터를 추가할 때만 사용할것
-    def addMultiContent(self, inputContents, userId):
+    def addMultiContent(self, inputContents, userId, category):
         userContent = self.__getUserContent(userId)
         tokenizedQuery = [self.__sentenceTokenizing(content["query"]) for content in inputContents]
-        bmPicklePath = os.path.join("vectorStore", f"{userId}.pkl")
+        # bmPicklePath = os.path.join("vectorStore", f"{userId}.pkl")
 
-        for i, inputContent in enumerate(inputContents):
-            inputContent["token"] = tokenizedQuery[i]
+        for inputContent in inputContents:
+            # inputContent["token"] = tokenizedQuery[i]
             inputContent["id"] = str(uuid.uuid4())
+            inputContent["category"] = category
             userContent.append(inputContent)
-
         bm25 = BM25Okapi(tokenizedQuery)
 
-        self.redis.set(f"{userId}:userContent", json.dumps(userContent))
-        with open(bmPicklePath, "wb") as f:
-            pickle.dump(bm25, f)
+        try:
+            self.redis.set(f"{userId}:userContent", json.dumps(userContent))
+            self.minio.putItem(userId, category, pickle.dumps(bm25))
 
-        self.mongo.updateDB({"userId":userId},{"content":userContent}, isUpsert=True)
-
-
-
-    def addContent(self, inputContent, userId):
-        userContent = self.__getUserContent(userId)
-        bmPicklePath = os.path.join("vectorStore", f"{userId}.pkl")
-
-        tokenizedQuery = self.__sentenceTokenizing(inputContent["query"])
-        tempContents = [content["query"] for content in userContent]
-        tempContents.append(tokenizedQuery) #기존 컨텐츠들 가져오고 이어붙이기
-        bm25 = BM25Okapi(tempContents) #컨텐츠 처음부터 다시 추가
-
-        inputContent["token"] = tokenizedQuery
-        inputContent["id"] = str(uuid.uuid4())
-        userContent.append(inputContent)
-
-        self.redis.set(f"{userId}:userContent", json.dumps(userContent))
-        with open(bmPicklePath, "wb") as f:
-            pickle.dump(bm25, f)
-
-        self.mongo.updateDB({"userId":userId},{"content":userContent}, isUpsert=True)
+            self.mongo.updateDB({"userId":userId},{"content":userContent}, isUpsert=True)
+        except Exception as e:
+            return False, f"DB Update Error: {e}"
+        else:
+            return True, ""
 
 
 
-    def searchContent(self, query, userId):
-        bm25 = self.__getBm25(userId)
+    #Legacy
+    # def addContent(self, inputContent, userId, category):
+    #     userContent = self.__getUserContent(userId)
+    #     # bmPicklePath = os.path.join("vectorStore", f"{userId}.pkl")
+
+    #     tokenizedQuery = self.__sentenceTokenizing(inputContent["query"])
+    #     tempContents = [content["query"] for content in userContent]
+    #     tempContents.append(tokenizedQuery) #기존 컨텐츠들 가져오고 이어붙이기
+    #     bm25 = BM25Okapi(tempContents) #컨텐츠 처음부터 다시 추가
+
+    #     # inputContent["token"] = tokenizedQuery
+    #     inputContent["id"] = str(uuid.uuid4())
+    #     userContent.append(inputContent)
+
+    #     self.redis.set(f"{userId}:userContent", json.dumps(userContent))
+    #     self.minio.putItem(userId, category, pickle.dumps(bm25))
+    #     # with open(bmPicklePath, "wb") as f:
+    #     #     pickle.dump(bm25, f)
+
+    #     self.mongo.updateDB({"userId":userId},{"content":userContent}, isUpsert=True)
+
+
+
+    def searchContent(self, query, userId, category):
+        bm25 = self.__getBm25(userId, category)
         userContent = self.__getUserContent(userId)
         if userContent == []:
             return "내용이 없습니다"
@@ -115,16 +124,42 @@ class CodeArchive:
 
         maxScoreIndex = np.argsort(scores)[::-1][0]
 
-        return userContent[maxScoreIndex]["code"]
+        return userContent[maxScoreIndex][category]
 
-    def removeContent(self, id, userId):
-        #userContent 가져오는 코드 필요 
-        indexNum = self.__search_by_key_value_index(userContent, "id", id)
+    def selectAllContent(self, userId, category):
+        userContent = self.__getUserContent(userId)
+        return userContent
+
+    def removeContent(self, contentId, userId, category):
+        userContent = self.__getUserContent(userId)
+        indexNum = self.__search_by_key_value_index(userContent, "id", contentId)
+        if indexNum == -1:
+            return False, "no Index"
         userContent.pop(indexNum)
-        #bm25에서의 삭제도 필요함
-        self.mongo.updateDB({"userId":userId},{"content":userContent}, isUpsert=True)
+        bm25 = BM25Okapi(userContent) #컨텐츠 처음부터 다시 추가
 
-        print("Remove Content Success!")
+        try:
+            self.redis.set(f"{userId}:userContent", json.dumps(userContent))
+            self.minio.putItem(userId, category, pickle.dumps(bm25))
+            
+            self.mongo.updateDB({"userId":userId},{"content":userContent}, isUpsert=False)
+        except Exception as e:
+            return False, "DB Update Error"
+        else:
+            return True, ""
+
+    def allRemoveContent(self, userId, category):
+        userContent = []
+        try:
+            self.redis.set(f"{userId}:userContent", json.dumps(userContent))
+            self.minio.deleteItem(userId, category)
+            
+            self.mongo.updateDB({"userId":userId},{"content":userContent}, isUpsert=False)
+        except Exception as e:
+            return False, "DB Update Error"
+        else:
+            return True, ""
+
 
 #모든 query의 길이는 모두 균일하게 맞춰야함. 안그러면 내용이 긴 애의 점수가 더 높아짐
 if __name__ == "__main__":
@@ -207,8 +242,10 @@ if __name__ == "__main__":
         }
     ]
     archiveMongo = ControlMongo(username=getApiKey("MONGODB_USERNAME"),password=getApiKey("MONGODB_PASSWORD"),dbName="tomato_server", collName="codeArchive")
-    redisClient = redis.Redis(host='redis_containerDev', port=6379)
-    archive = CodeArchive(mongo=archiveMongo, redis=redisClient)
-    archive.addMultiContent(sample, userId="adbfcbcb-5413-409c-a267-f43ee700575a")
+    minio = ControlMinio(getApiKey("MINIO_ENDPOINT"), "gptarchive", getApiKey("MINIO_ACCESS_KEY"), getApiKey("MINIO_SECRET_KEY"))
+    redisClient = redis.Redis(host='redis_containerDev', port=getApiKey("REDIS_PORT"))
+    archive = GPTArchive(mongo=archiveMongo, redis=redisClient, minio=minio)
+    # archive.addMultiContent(sample2, "adbfcbcb-5413-409c-a267-f43ee700575a", "code")
     # archive.addContent(add_sample)
-    # result = archive.searchContent("상태나 속성 이상을 걸어버리는 타입")
+    result = archive.searchContent("상태나 속성 이상을 걸어버리는 타입", "adbfcbcb-5413-409c-a267-f43ee700575a", "code")
+    print(result)

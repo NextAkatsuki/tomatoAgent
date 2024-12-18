@@ -1,34 +1,28 @@
-from openai import OpenAI
-import re, os, sys
-sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
-from prompt import system_prompt
-from tools import toolsInitial, codeArchive
-from util import getApiKey, ControlMongo
-
-
+import re
 import uuid
+from prompt import system_prompt
 
 class Agent:
-    # def __init__(self, userInfo):
-    #     self.userInfo = userInfo
 
-    
     def getChatHistory(self):
         return self.chatHistory
 
+    def createChatName(self, chatmng, client, chatHistory):
+        return chatmng(client)
+
     def runAgent(self, userId, client, tool_regist, prompt, showProcess=False, toolList=[], streaming=False, chatHistory=None):
         System_prompt = system_prompt.setSystemPrompt(tool_regist.get_tool_info(toolList))
-        user_q = str(uuid.uuid4())
-        system_answer = str(uuid.uuid4())
+        user_key = str(uuid.uuid4())
+        system_key = str(uuid.uuid4())
 
         if chatHistory == None:
-            chatHistory = [{ "role": "user", "content": prompt, "type":"conversation", "key" : user_q}]
+            chatHistory = [{ "role": "user", "content": prompt, "type":"conversation", "key" : user_key}]
         else:
-            chatHistory.append({ "role": "user", "content": prompt, "type":"conversation", "key" : user_q })
+            chatHistory.append({ "role": "user", "content": prompt, "type":"conversation", "key" : user_key })
 
 
         messages = [
-            { "role": "system", "content": System_prompt, "type":"description" ,"key":system_answer },
+            { "role": "system", "content": System_prompt, "type":"description" ,"key":system_key },
             *chatHistory
         ]
 
@@ -56,29 +50,31 @@ class Agent:
                     result_response += response_text
                     if all(cond_str in result_response for cond_str in end_strs) and streaming == True:
                         yield response_text
-                            
-            addChatHistory.append({"role":"system", "content":result_response, "type":"description", "key":system_answer})
+
+            if showProcess == True:
+                yield result_response  
+
+
+            addChatHistory.append({"role":"system", "content":result_response, "type":"description", "key":system_key})
             if streaming == False and "Action: Response To Human" in result_response:
                 yield f"> {result_response.split('Action Input:')[1]}"
 
-            if showProcess == True:
-                yield result_response 
 
             action, action_input = extract_action_and_input(result_response)
             if action[-1] in tool_regist.get_funcNames(): #action명 체크
                 tool = tool_regist.get_func(action[-1]) #action의 함수명을 이용하여 함수객체 가져오기
             elif action[-1] == "Response To Human":
-                addChatHistory.append({ "role": "system", "content": result_response.split('Action Input:')[1],"type":"conversation" ,"key":system_answer})
+                addChatHistory.append({ "role": "system", "content": result_response.split('Action Input:')[1],"type":"conversation" ,"key":system_key})
                 self.chatHistory.extend(addChatHistory)
                 break
             observation = tool(action_input[-1],userId=userId)
             if showProcess == True:
                 yield f"Observation: {observation}"
 
-            addChatHistory.append({"role":"system", "content":f"Observation: {observation}", "type":"description" ,"key":system_answer})
+            addChatHistory.append({"role":"system", "content":f"Observation: {observation}", "type":"description" ,"key":system_key})
 
             messages = [
-                { "role": "system", "content": System_prompt, "type":"description" ,"key":system_answer},
+                { "role": "system", "content": System_prompt, "type":"description" ,"key":system_key},
                 *addChatHistory
             ]
 
@@ -87,14 +83,20 @@ class Agent:
 
 if __name__ == "__main__":
     import redis 
+    from openai import OpenAI
     import pickle
     import json
+    from tools import toolsInitial
+    from util import getApiKey, ControlMongo, ControlMinio
+    from chat_manager import ChatManager
 
     chatMongo = ControlMongo(username=getApiKey("MONGODB_USERNAME"),password=getApiKey("MONGODB_PASSWORD"),dbName="tomato_server", collName="chatHistory")
     codeArchiveMongo = ControlMongo(username=getApiKey("MONGODB_USERNAME"),password=getApiKey("MONGODB_PASSWORD"),dbName="tomato_server", collName="codeArchive")
     client = OpenAI(api_key=getApiKey("OPENAI_API_KEY"))
     redisClient = redis.Redis(host='redis_containerDev', port=6379)
-    userInfo = {"user_uid":"adbfcbcb-5413-409c-a267-f43ee700575a", "chatId":"qqww", "content": []} #Redis
+    minio = ControlMinio(getApiKey("MINIO_ENDPOINT"), "gptarchive", getApiKey("MINIO_ACCESS_KEY"), getApiKey("MINIO_SECRET_KEY"))
+    userInfo = {"user_uid":"adbfcbcb-5413-409c-a267-f43ee700575a", "chatId":"zxca"} 
+    chatmng = ChatManager()
     
     if len(mongoResult := codeArchiveMongo.selectDB({"userId":userInfo["user_uid"]})) > 0:
         content = mongoResult[0]["content"]
@@ -104,13 +106,16 @@ if __name__ == "__main__":
     redisClient.set(f"{userInfo['user_uid']}:userContent", json.dumps(content))
 
 
-    toolRegist = toolsInitial(codeArchiveMongo, redisClient)
+    toolRegist = toolsInitial(codeArchiveMongo, redisClient, minio)
     #mongo를 외부에서 인스턴스하고 함수 내부에서는 호출만 할때 redis로 저장되는지 테스트해볼것
     agent = Agent()#Redis
     chatHistory = None
+    isFirstChat = False 
 
     if len(result := chatMongo.selectDB({"chatId": userInfo["chatId"]})) >= 1:
         chatHistory = result[0]["chatHistory"]
+    else:
+        isFirstChat = True
 
 
     inputStr = ""
@@ -118,19 +123,22 @@ if __name__ == "__main__":
         inputStr = input(">")
         if inputStr == "q":
             break
+
         for msg in agent.runAgent(  
                                 userInfo["user_uid"],
                                 client, 
                                 toolRegist,
                                 inputStr, 
-                                showProcess=True, 
-                                toolList=["search_code"], 
+                                showProcess=False, 
+                                toolList=["search"], 
                                 streaming=False,
                                 chatHistory=chatHistory
                                 ):
             print(msg)
         chatMongo.updateDB({"chatId": userInfo["chatId"]}, {"chatHistory":agent.getChatHistory()}, isUpsert=True)
         chatHistory = agent.getChatHistory()
-        from pprint import pprint
-        #pprint(chatHistory)
+        if isFirstChat:
+            print(chatmng.createChatName(client, chatHistory))
+            isFirstChat = False
+        
 

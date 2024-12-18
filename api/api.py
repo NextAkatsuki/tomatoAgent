@@ -1,14 +1,16 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
 import uvicorn
 import pymongo
 import sys, os
 import redis
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from src.util import ControlMongo,getApiKey
-from router.dbRouter import register, login
+#from src.util import ControlMongo,getApiKey
+#from router.dbRouter import register, login
 
 app = FastAPI()
 
@@ -17,28 +19,66 @@ origins = [
     #"",  # 로컬 네트워크에서 접근할 수 있는 IP 주소 (백엔드가 다른 PC에 있을 경우) 보안을 위해서 지웠음
 ]
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"]
-)
+"""
+동적 Origin 반환:
+요청의 Origin 헤더를 읽고, 이를 Access-Control-Allow-Origin 값으로 설정합니다.
+Access-Control-Allow-Credentials:
+쿠키 전송을 허용합니다.
+allow_origins=["*"]의 유연함 유지: 다양한 Origin을 동적으로 허용.
+allow_credentials=True와 호환: 요청에 쿠키나 인증 정보를 포함할 수 있음.
+"""
+class CustomCORSMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if request.method == "OPTIONS":
+            response = Response(status_code=200)
+            response.headers["Access-Control-Allow-Origin"] = request.headers.get("origin", "")
+            response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            return response
+        
+        response = await call_next(request)
+        response.headers["Access-Control-Allow-Origin"] = request.headers.get("origin", "")
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        return response
 
-client = pymongo.MongoClient(getApiKey("MONGODB_URL"))
-redisClient = redis.Redis(host=getApiKey("REDIS_URL"), port=int(getApiKey("REDIS_PORT")))
+app.add_middleware(CustomCORSMiddleware)
+
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=["*"],
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"]
+# )
 
 from auth.auth import auth
 from chat.chat import chat_api
+from archive.archive import archive_api
 
-app.include_router(auth, prefix='/auth')
-app.include_router(chat_api)
+app.include_router(auth, prefix='/api/auth')
+app.include_router(chat_api, prefix='/api/chat')
+app.include_router(archive_api, prefix='/api/archive')
 
 #@app.on_event("startup")
 #def startupEvent():
 #    app.state.mongo = ControlMongo(username=getApiKey("MONGODB_USERNAME"),password=getApiKey("MONGODB_PASSWORD"),dbName=("tomato_server"),collName="Users")
 
-
 @app.get("/")
 def root():
     return {"message" : "Hello World"}
+
+
+session_data = {}
+@app.post("/asdf")
+def root():
+    session_id="asdf"
+    session_data[session_id] = {"username": "hehehe5"}
+    
+    # 쿠키로 세션 아이디를 전달
+    response = {"session_id": session_id}
+    
+    # 쿠키에 HttpOnly 속성을 추가하여 JavaScript에서 접근할 수 없게 만듦
+    cookie = f"session_id={session_id}; Path=/; HttpOnly"
+    
+    return response, {"headers": {"Set-Cookie": cookie}}

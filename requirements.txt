@@ -1,5 +1,7 @@
 annotated-types==0.7.0
 anyio==4.4.0
+boto3==1.35.68
+botocore==1.35.68
 cachetools==5.4.0
 certifi==2024.7.4
 cffi==1.17.0
@@ -21,6 +23,7 @@ httpcore==1.0.5
 httplib2==0.22.0
 httpx==0.27.0
 idna==3.7
+jmespath==1.0.1
 joblib==1.4.2
 JPype1==1.5.0
 konlpy==0.6.0
@@ -45,14 +48,15 @@ pydantic_core==2.20.1
 pymongo==4.8.0
 pyparsing==3.1.2
 python-dateutil==2.9.0.post0
-python-multipart==0.0.9
 python-dotenv==1.0.1
+python-multipart==0.0.9
 pytz==2024.1
 rank-bm25==0.2.2
 redis==5.0.8
 regex==2024.7.24
 requests==2.32.3
 rsa==4.9
+s3transfer==0.10.4
 six==1.16.0
 sniffio==1.3.1
 soylemma==0.2.0

@@ -22,7 +22,7 @@ def __generateToken():
 
 def register(mongo, userName:str, password:str):
     if len(mongo.selectDB({"userName":userName})) != 0:
-        return {"success": False, "msg": "already userName"}
+        return {"success": False, "msg": "이미 존재하는 사용자입니다."}
     else:
         randomChoice = random.choice(['a', 'b', 'c', 'd'])
         encryptPassword = password_encrypt(password.encode(), randomChoice)
@@ -34,8 +34,7 @@ def register(mongo, userName:str, password:str):
             "chatHistory": []
         }
         mongo.insertDB(user)
-        return {"success": True, "user": user, "msg": "회원가입 성공"}
-    
+        return {"success": True, "msg":"회원가입 성공", "user": user}
     
 def login(mongo, userName:str, password:str):
     if len(result := mongo.selectDB({"userName":userName})) == 0:
@@ -50,25 +49,27 @@ def login(mongo, userName:str, password:str):
         if password == decryptPassword:
             token = __generateToken()
             user = {
-                        "userName": userInfo["userName"],
-                        "_id" : userInfo["_id"],
-                        "chatHistory" : userInfo["chatHistory"],
-                        }
+                    "userName": userInfo["userName"],
+                    "_id" : userInfo["_id"],
+                    "chatHistory" : userInfo["chatHistory"],
+                    }
+
             
-            #레디스 사용자 세션저장
+            #Redis
             try:
                 user = json.dumps(user)
                 redis_token = f"token:{token}"
-                r.set(redis_token,user)
+                r.set(redis_token,user) 
                 r.expire(redis_token,3600)
 
                 alluser = r.keys("token*")
-                print("alluser",alluser)
-            except redis.RedisError as e:
-                print(f"Redis error: {e}")
-                raise HTTPException(status_code=500, detail="Redis Internal server error")
+                #print("alluser",alluser)
+            except Exception as e:
+                #print("dbRouter 로그인 레디스 에러 발생")
+                #print(f"{e}")
+                raise HTTPException(status_code=500, detail="dbRouter 로그인 레디스 에러 발생")
 
-            return  {"success": True, "token" : token, "user": user, "msg": "Login Success"}
+            return  {"success": True, "token" : token, "user": userInfo["userName"], "msg": "Login Success"}
         else: 
             return {"success": False, "msg":"Wrong password"}
 
