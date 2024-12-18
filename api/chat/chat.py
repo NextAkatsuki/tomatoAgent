@@ -25,7 +25,6 @@ toolRegist = None
 
 class Chat(BaseModel):
     q: str
-    cookie: str
     chat_uid: str
     userChat_uid: Optional[str] = None
     sysChat_uid: Optional[str] = None
@@ -77,7 +76,7 @@ async def chat(
     q = chat.q
     chat_uid = chat.chat_uid            
     toolList = chat.toolList
-    cookie = chat.cookie
+    cookie = request.cookies.get("tomatoSID")
 
     if not api_pass(cookie):
         raise HTTPException(status_code=401, detail="세션을 찾을 수 없거나 만료된 사용자 입니다.")

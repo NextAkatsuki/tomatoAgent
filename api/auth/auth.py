@@ -53,7 +53,7 @@ def loginUser(response: Response, request:Request, user:User, mongo=Depends(mong
             else:
                 #product환경에서는 아래 주석을 해제할것
                 response.set_cookie(key="tomatoSID",value=result["token"],httponly=False,samesite="None",secure=True)
-                toRedis = f"token:{result["token"]}"
+                toRedis = f"token:{result['token']}"
 
                 return {"success":True, "user":result["user"],"token":result["token"]}
         except Exception as e:
