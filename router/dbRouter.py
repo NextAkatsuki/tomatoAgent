@@ -6,11 +6,11 @@ import random
 from datetime import datetime
 import string
 import uuid
-import redis
+from dependencies import redisClient
 import json
 
 dbRoute = APIRouter()
-r = redis.Redis(host='redis_containerDev', port=6379)
+r = redisClient()
 
 def __generateToken():
     n = 20
@@ -67,7 +67,7 @@ def login(mongo, userName:str, password:str):
             except Exception as e:
                 #print("dbRouter 로그인 레디스 에러 발생")
                 #print(f"{e}")
-                raise HTTPException(status_code=500, detail="dbRouter 로그인 레디스 에러 발생")
+                raise HTTPException(status_code=500, detail=f"dbRouter 로그인 레디스 에러 발생: {e}")
 
             return  {"success": True, "token" : token, "user": userInfo["userName"], "msg": "Login Success"}
         else: 

@@ -59,7 +59,7 @@ def loginUser(response: Response, request:Request, user:User, mongo=Depends(mong
         except Exception as e:
             print("Endpoint Auth - Login에서 에러 발생")
             print(f"{e}")
-            raise HTTPException(status_code=404, detail=f"auth - login 엔드포인트 에러 발생 : {e}")
+            raise HTTPException(status_code=500, detail=f"auth - login 엔드포인트 에러 발생 : {e}")
 
 @auth.post("/logout")
 def logoutUser(response:Response,request:Request):
