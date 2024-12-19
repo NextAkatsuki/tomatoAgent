@@ -67,6 +67,7 @@ async def newChat(
 @chat_api.post("/chat")
 async def chat(
                 chat:Chat,
+                request:Request,
                 redisClient=Depends(redisClient),
                 mongo=Depends(mongo),
                 agent=Depends(Agent),
