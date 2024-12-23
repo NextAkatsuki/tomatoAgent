@@ -26,13 +26,34 @@ toolRegist = None
 class Chat(BaseModel):
     q: str
     chat_uid: str
+    token: str
     userChat_uid: Optional[str] = None
     sysChat_uid: Optional[str] = None
     toolList: Optional[List[str]] = []
 
-class createChatNameBase(BaseModel):
-    chat_uid: str
+class newChatBase(BaseModel):
+    token: str
 
+class createChatNameBase(BaseModel):
+    getChatHistory: list
+    chat_uid: str
+    
+
+class deleteChatOption(BaseModel):
+    chatUid: str
+    userChatUid: str
+    sysChatUid: str
+
+class getChatListBase(BaseModel):
+    token: str
+
+class getChatBase(BaseModel):
+    chat_uid: str
+    token: str
+
+class deleteChatBase(BaseModel):
+    token: str
+    chat_uid: str
 
 
 @chat_api.on_event("startup")
@@ -42,20 +63,20 @@ def startupEvent():
 
 @chat_api.post("/newchat")
 async def newChat(
-            request:Request,
+            chat:newChatBase,
             redisClient=Depends(redisClient),
             mongo=Depends(mongo)):
-    cookie = request.cookies.get("tomatoSID")
     chat_uid = str(uuid.uuid4())
-    
-
+    token = chat.token
+    if not api_pass(token):
+        return {"success": False, "msg":"세션이 만료된 사용자입니다"}
     try:
-        getSID = cookie
+        getSID = chat.token
         user = json.loads(redisClient.get(f"token:{getSID}").decode('utf-8'))
-        redis_chatid = f"{getSID}:{chat_uid}"
+        redis_chatid = f"{getSID}_{chat_uid}"
         redisClient.set(redis_chatid,json.dumps([]))
         mongo.coll.update_one(
-                    {"_id":user.get("_id")},
+                    {"user_id":user.get("user_id")},
                     {"$addToSet":{"chatHistory":chat_uid}}
                     )
     except Exception as e:
@@ -67,9 +88,7 @@ async def newChat(
 @chat_api.post("/chat")
 async def chat(
                 chat:Chat,
-                request:Request,
                 redisClient=Depends(redisClient),
-                mongo=Depends(mongo),
                 agent=Depends(Agent),
                 chatMongo=Depends(chatMongo),
                 client=Depends(openaiClient)):
@@ -77,7 +96,7 @@ async def chat(
     q = chat.q
     chat_uid = chat.chat_uid            
     toolList = chat.toolList
-    cookie = request.cookies.get("tomatoSID")
+    cookie = chat.token
 
     if not api_pass(cookie):
         raise HTTPException(status_code=401, detail="세션을 찾을 수 없거나 만료된 사용자 입니다.")
@@ -87,9 +106,13 @@ async def chat(
             user = json.loads(redisClient.get(f"token:{getSID}").decode('utf-8'))
             userName = user.get("userName")
                                       
-            loadHistory = f"{user}:{chat_uid}"
-            chatHistory = redisClient.get(loadHistory)
-            chatHistory = json.loads(chatHistory.decode('utf-8'))
+            redisChatId = f"{getSID}_{chat_uid}"
+            redisChatHistory = redisClient.get(redisChatId)
+            if redisChatHistory is None:
+                chatHistory = None
+            else:
+                chatHistory = json.loads(redisChatHistory.decode('utf-8'))
+            print(chatHistory)
 
             answer = []
 
@@ -112,101 +135,131 @@ async def chat(
                             {"chatHistory": agent.getChatHistory()}, 
                             isUpsert=True) 
 
-                redisClient.set(loadHistory,json.dumps(agent.getChatHistory()))
+                redisClient.set(redisChatId,json.dumps(agent.getChatHistory()))
+                redisClient.expire(redisChatId, 3600)
             return StreamingResponse(system_answer(agent),media_type="text/event_stream")
 
         except Exception as e:
             print({e})
             raise HTTPException(status_code=500, detail=e)
 
-# @chat_api.post("/chat")
-# async def chat(
-#                 request:Request,
-#                 chat:Chat,
-#                 redisClient=Depends(redisClient),
-#                 mongo=Depends(mongo),
-#                 agent=Depends(Agent),
-#                 chatMongo=Depends(chatMongo),
-#                 client=Depends(openaiClient)):
-
-#     q = chat.q
-#     chat_uid = chat.chat_uid            
-#     toolList = chat.toolList
-
-#     if not api_pass(request.cookies.get("tomatoSID")):
-#         raise HTTPException(status_code=401, detail="세션을 찾을 수 없거나 만료된 사용자 입니다.")
-#     else:
-#         try:
-#             getSID = request.cookies.get("tomatoSID")
-#             user = json.loads(redisClient.get(f"token:{getSID}").decode('utf-8'))
-#             userName = user.get("userName")
-
-#             if chat_uid != None:                                                #이전 채팅 이어서 할때
-#                 loadHistory = f"{user}:{chat_uid}"
-#                 chatHistory = redisClient.get(loadHistory)
-#                 chatHistory = json.loads(chatHistory.decode('utf-8'))
-
-#             elif chat_uid == None:                                          #채팅 처음 생성 시
-#                 chatHistory = None                                      
-#                 chat_uid = str(uuid.uuid4())
-#                 redis = f"{user}:{chat_uid}"
-
-#                 mongo.coll.update_one(
-#                     {"_id":user.get("_id")},
-#                     {"$addToSet":{"chatHistory":chat_uid}}
-#                     )
-            
-#             answer = []
-
-#             async def system_answer(agent):
-#                 for msg in agent.runAgent(
-#                                     userName,
-#                                     client,
-#                                     toolRegist,
-#                                     q,
-#                                     showProcess=False,
-#                                     toolList=["search"],
-#                                     streaming=True,
-#                                     chatHistory = chatHistory
-#                                     ):
-
-#                     yield msg
-
-#                 chatMongo.updateDB(
-#                             {"chat_uid" : chat_uid}, 
-#                             {"chatHistory": agent.getChatHistory()}, 
-#                             isUpsert=True) 
-
-#                 redisClient.set(redis,json.dumps(agent.getChatHistory()))
-#             return StreamingResponse(system_answer(agent),media_type="text/event_stream")
-
-#         except Exception as e:
-#             print({e})
-#             raise HTTPException(status_code=500, detail=e)
 
 @chat_api.post("/createChatName")
 async def createChatName(
-        request:Request,
         createchat:createChatNameBase,
         chatmng=Depends(ChatManager),
-        redisClient=Depends(redisClient),
+        chatMongo=Depends(chatMongo),
         client=Depends(openaiClient)
     ):
-    getSID = request.cookies.get("tomatoSID")
     chat_uid = createchat.chat_uid
-    try:
-        user = json.loads(redisClient.get(f"token:{getSID}").decode('utf-8'))
-        loadHistory = f"{user}:{chat_uid}"
-        chatHistory = redisClient.get(loadHistory)
-    except Exception as e:
-        return HTTPException(status_code=500, detail=f"Get Data Error: {e}")
+    chatHistory = createchat.getChatHistory
 
-    
+    print(chatHistory)
     result = chatmng.createChatName(client, chatHistory)
     if result == "":
         return {"success": False, "msg": "generate name failed"}
     else:
-        return {"success": True, "chatName": result}
+        try:
+            chatMongo.updateDB(
+                            {"chat_uid" : chat_uid}, 
+                            {"chat_name": result}, 
+                            isUpsert=True) 
+        except Exception as e:
+            return {"success": False, "msg": f"chatName update DB Error: {e}"}
+        else:
+            return {"success": True, "chatName": result}
+
+@chat_api.post("/getChatList")
+async def getChatList(
+    chatList: getChatListBase,
+    chatMongo=Depends(chatMongo),
+    redisClient=Depends(redisClient)
+):
+    token = chatList.token
+    if not api_pass(token):
+        return {"success": False, "msg":"세션이 만료된 사용자입니다"}
+    try:
+        user = json.loads(redisClient.get(f"token:{token}").decode('utf-8'))
+    except Exception as e:
+        return {"success": False, "msg": f"redis Error: {e}"}
+    result = []
+
+    for chat in user['chatHistory']:
+        mongoResult = chatMongo.selectDB({"chat_uid":chat})
+        if len(mongoResult) == 1:
+            result.append({"chat_name":mongoResult[0]["chat_name"], "chat_id":mongoResult[0]["chat_uid"]})
+        else:
+            print("error") #for debugging
+    return {"success": True, "content":result}
+
+
+@chat_api.post("/getChat")
+async def getChatContent(
+    getChat: getChatBase,
+    chatMongo=Depends(chatMongo),
+    redisClient=Depends(redisClient)
+):
+    token = getChat.token 
+    chat_uid = getChat.chat_uid
+    redisChatId = f"{token}_{chat_uid}"
+
+    if not api_pass(token):
+        return {"success": False, "msg":"세션이 만료된 사용자입니다"}
+
+    def filter_by_key_value(dict_list, key, value):
+        return [d for d in dict_list if d.get(key) == value]
+
+
+    if redisClient.exists(redisChatId): #redis에 cache가 있을경우
+        redisResult = json.loads(redisClient.get(redisChatId).decode('utf-8'))
+        result = filter_by_key_value(redisResult, "type", "conversation") #대화만 가져오도록 필터링
+        return {"success":True, "content": result}
+    else:
+        mongoResult = chatMongo.selectDB({"chat_uid":chat_uid})
+        if len(mongoResult) != 1:
+            return {"success": False, "msg": "not Found chat"}
+        
+        result = filter_by_key_value(mongoResult[0]['chatHistory'], "type", "conversation") #대화만 가져오도록 필터링
+        redisClient.set(redisChatId,json.dumps(result))
+        redisClient.expire(redisChatId, 3600)
+        return {"success": True, "content": result}
+    
+
+@chat_api.post("/chatDelete")
+async def deleteChat(
+    chatDelete:deleteChatBase,
+    chatMongo=Depends(chatMongo),
+    mongo=Depends(mongo),
+    redisClient=Depends(redisClient)
+):
+    chat_uid = chatDelete.chat_uid
+    token = chatDelete.token
+    redisChatId = f"{token}_{chat_uid}"
+
+
+    if not api_pass(token):
+        return {"success": False, "msg":"세션이 만료된 사용자입니다"}
+    
+    userId = json.loads(redisClient.get(f"token:{token}").decode("utf-8"))["user_id"]
+    getuserMongoResult = mongo.selectDB({"user_id": userId})
+
+    #user정보의 chatHistory 내용 수정 
+    userChatList = getuserMongoResult[0]['chatHistory']
+    userChatList.remove(chat_uid)
+
+    chatMongoResult = chatMongo.deleteDB({"chat_uid": chat_uid}) #chatHistory
+    userMongoResult = mongo.updateDB({"user_id": userId},{"chatHistory": userChatList}) #Users
+
+    if chatMongoResult[0] and userMongoResult:
+        try:
+            redisClient.delete(redisChatId) #Redis
+        except Exception as e:
+            return {"success": False, "msg": f"redis Error: {e}"}
+        else:
+            return {"success": True}
+    else:
+        return {"success": False, "msg": f"mongo delete Error: {chatMongoResult[1]}"}
+    
 
 
 

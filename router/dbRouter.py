@@ -10,7 +10,7 @@ from dependencies import redisClient
 import json
 
 dbRoute = APIRouter()
-r = redisClient()
+
 
 def __generateToken():
     n = 20
@@ -27,21 +27,22 @@ def register(mongo, userName:str, password:str):
         randomChoice = random.choice(['a', 'b', 'c', 'd'])
         encryptPassword = password_encrypt(password.encode(), randomChoice)
         user = {
-            "_id" : str(uuid.uuid4()),
+            "user_id" : str(uuid.uuid4()),
             "userName": userName,
             "password": encryptPassword,
             "key": randomChoice,
+            "token": "",
             "chatHistory": []
         }
         mongo.insertDB(user)
         return {"success": True, "msg":"회원가입 성공", "user": user}
-    
+
 def login(mongo, userName:str, password:str):
     if len(result := mongo.selectDB({"userName":userName})) == 0:
         return {"success": False, "msg": "No ID"}
     else:
         userInfo = result[0]
-        userInfo["_id"] = str(userInfo["_id"])
+        userInfo["user_id"] = str(userInfo["user_id"])
         key = userInfo["key"]
         encryptPassword = userInfo["password"]
         decryptPassword = password_decrypt(encryptPassword, key).decode()
@@ -50,38 +51,61 @@ def login(mongo, userName:str, password:str):
             token = __generateToken()
             user = {
                     "userName": userInfo["userName"],
-                    "_id" : userInfo["_id"],
+                    "user_id" : userInfo["user_id"],
                     "chatHistory" : userInfo["chatHistory"],
                     }
-
-            
-            #Redis
-            try:
-                user = json.dumps(user)
-                redis_token = f"token:{token}"
-                r.set(redis_token,user) 
-                r.expire(redis_token,3600)
-
-                alluser = r.keys("token*")
-                #print("alluser",alluser)
-            except Exception as e:
-                #print("dbRouter 로그인 레디스 에러 발생")
-                #print(f"{e}")
-                raise HTTPException(status_code=500, detail=f"dbRouter 로그인 레디스 에러 발생: {e}")
-
-            return  {"success": True, "token" : token, "user": userInfo["userName"], "msg": "Login Success"}
+            return  {"success": True, "token" : token, "user": user, "msg": "Login Success"}
         else: 
             return {"success": False, "msg":"Wrong password"}
+  
+#backup
+# def login(mongo, userName:str, password:str):
+#     if len(result := mongo.selectDB({"userName":userName})) == 0:
+#         return {"success": False, "msg": "No ID"}
+#     else:
+#         userInfo = result[0]
+#         userInfo["_id"] = str(userInfo["_id"])
+#         key = userInfo["key"]
+#         encryptPassword = userInfo["password"]
+#         decryptPassword = password_decrypt(encryptPassword, key).decode()
 
-def logout(mongo, userName:str):
-    token = mongo.selectDB({"userName":userName})[0]["token"]
-    if token != "":
-        mongo.updateDB({"userName":userName}, {"token":""})
-        return {"success": True}
+#         if password == decryptPassword:
+#             token = __generateToken()
+#             mongo.updateDB({"userName":userName}, {"token":token})
+#             user = {
+#                     "userName": userInfo["userName"],
+#                     "_id" : userInfo["_id"],
+#                     "chatHistory" : userInfo["chatHistory"],
+#                     }
+#             return  {"success": True, "token" : token, "user": user, "msg": "Login Success"}
+#         else: 
+#             return {"success": False, "msg":"Wrong password"}
+
+def logout(token:str):
+    r = redisClient()
+    if r.exists(token):
+        try:
+            r.delete(token)
+        except Exception as e:
+            return {"success": False, "msg": f"logout redis error: {e}"}
+        else:
+            return {"success": True}
     else:
-        return {"success": False, "msg":"token Error"}
+        return {"success": False, "msg": "logout redis exists error"}
 
-def __auth(mongo, userName, token):
+
+#backup
+# def logout(mongo, token:str):
+#     if len(result:=mongo.selectDB({"token":token})) == 0: 
+#         token = mongo.selectDB({"token":token})[0]["token"]
+#         print(token)
+#     if token != "":
+#         mongo.updateDB({"token":token},{"token":""})
+#         return {"success": True}
+#     else:
+#         return {"success": False, "msg":"token Error"}
+
+def __auth(mongo, userName, token):#밑에 수정할곳
     if len(mongo.selectDB({"userName": userName, "token":token})) != 0:
         return True
     else:

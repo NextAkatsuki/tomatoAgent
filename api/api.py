@@ -69,16 +69,20 @@ def root():
     return {"message" : "Hello World"}
 
 
-session_data = {}
-@app.post("/asdf")
-def root():
-    session_id="asdf"
-    session_data[session_id] = {"username": "hehehe5"}
+import psutil
+from fastapi import Request as FastapiRequest
+
+def getMemoryUsage():
+    process = psutil.Process(os.getpid())
+    return process.memory_info().rss / 1024**2
+
+@app.middleware("http")
+async def track_memory_usage(request:FastapiRequest,call_next):
+    start_memory = getMemoryUsage()
+    response = await call_next(request)
+    print(response)
+    end_memory=getMemoryUsage()
     
-    # 쿠키로 세션 아이디를 전달
-    response = {"session_id": session_id}
-    
-    # 쿠키에 HttpOnly 속성을 추가하여 JavaScript에서 접근할 수 없게 만듦
-    cookie = f"session_id={session_id}; Path=/; HttpOnly"
-    
-    return response, {"headers": {"Set-Cookie": cookie}}
+    print("startmemory", start_memory)
+    print("endmemory", end_memory)
+    return response

@@ -27,11 +27,15 @@ def Minio():
         secret_key=getApiKey("MINIO_SECRET_KEY")
     )
 
-
 # OpenAI API 클라이언트 생성 함수
 def openaiClient():
     return OpenAI(api_key=getApiKey("OPENAI_API_KEY"))
 
-# def toolRegist():
-#     toolRegist = toolsInitial()
-#     return toolRegist
+#import pymongo
+#os.environ["ENV"] = "dev"
+# pymongo.MongoClient()
+#if __name__=="__main__":
+#    mongo = ControlMongo(username=getApiKey("MONGODB_USERNAME"), password=getApiKey("MONGODB_PASSWORD"), dbName="tomato_server", collName="Users" )
+#    logs = mongo.selectDB()
+#    for log in logs:
+#        print(log)

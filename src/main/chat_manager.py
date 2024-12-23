@@ -5,8 +5,10 @@ from prompt import chatName_prompt
 class ChatManager:
     def createChatName(self, client, chatHistory):
         #첫번째 대화로 고정
-        q = chatHistory[1]["content"]
-        a = chatHistory[2]["content"]
+        # q = chatHistory[1]["content"]
+        # a = chatHistory[2]["content"]
+        q = chatHistory[0]
+        a = chatHistory[1]
         ChatNamePrompt = chatName_prompt.setChatNamePrompt()
         ChatNameUser = chatName_prompt.setChatNameUser(q,a)
         messages = [

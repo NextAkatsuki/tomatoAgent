@@ -2,7 +2,6 @@ import redis
 #from .api import redisClient
 from .dependencies import redisClient
 
-print(redisClient)
 
 def api_pass(token):                    #로그인 확인용
     token = f"token:{token}"
@@ -14,3 +13,4 @@ def chat_pass(token):
     token = f"token:{token}"
     userInfo = redisClient().get(token)
     return userInfo
+    

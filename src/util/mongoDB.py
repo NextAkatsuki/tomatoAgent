@@ -9,6 +9,7 @@ class ControlMongo:
     def __init__(self, username, password, dbName, collName):
         try:
             conn = pymongo.MongoClient(host=getApiKey("MONGODB_URL"), port=int(getApiKey("MONGODB_PORT")), username=username, password=password)
+            print(int(getApiKey("MONGODB_PORT")))
             db = conn.get_database(dbName)
             self.coll = db.get_collection(collName)
         except Exception as e:
@@ -36,9 +37,9 @@ class ControlMongo:
             else:
                 self.coll.delete_one(queryDict)
         except Exception as e: 
-            raise Exception(f"DB remove ERROR : {e}")
+            return False, f"DB remove ERROR : {e}"
 
-        return True
+        return True, ""
 
     def updateDB(self, queryDict, modifyDict, isMulti=False, isUpsert=False):
         try:
@@ -47,8 +48,7 @@ class ControlMongo:
             else:
                 self.coll.update_many(queryDict, {"$set":modifyDict}, upsert=isUpsert)
         except Exception as e: 
-            raise Exception(f"DB update ERROR : {e}")
+            # raise Exception(f"DB update ERROR : {e}")
+            return False
 
         return True
-
-
