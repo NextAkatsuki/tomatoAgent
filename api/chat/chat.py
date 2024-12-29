@@ -122,7 +122,7 @@ async def chat(
                                     client,
                                     toolRegist,
                                     q,
-                                    showProcess=False,
+                                    showProcess=True,
                                     toolList=["search"],
                                     streaming=True,
                                     chatHistory = chatHistory
@@ -206,20 +206,22 @@ async def getChatContent(
     if not api_pass(token):
         return {"success": False, "msg":"세션이 만료된 사용자입니다"}
 
-    def filter_by_key_value(dict_list, key, value):
-        return [d for d in dict_list if d.get(key) == value]
+    # def filter_by_key_value(dict_list, key, value):
+    #     return [d for d in dict_list if d.get(key) == value]
 
 
     if redisClient.exists(redisChatId): #redis에 cache가 있을경우
         redisResult = json.loads(redisClient.get(redisChatId).decode('utf-8'))
-        result = filter_by_key_value(redisResult, "type", "conversation") #대화만 가져오도록 필터링
+        # result = filter_by_key_value(redisResult, "type", "conversation") #대화만 가져오도록 필터링
+        result = redisResult
         return {"success":True, "content": result}
     else:
         mongoResult = chatMongo.selectDB({"chat_uid":chat_uid})
         if len(mongoResult) != 1:
             return {"success": False, "msg": "not Found chat"}
         
-        result = filter_by_key_value(mongoResult[0]['chatHistory'], "type", "conversation") #대화만 가져오도록 필터링
+        # result = filter_by_key_value(mongoResult[0]['chatHistory'], "type", "conversation") #대화만 가져오도록 필터링
+        result = mongoResult[0]['chatHistory']
         redisClient.set(redisChatId,json.dumps(result))
         redisClient.expire(redisChatId, 3600)
         return {"success": True, "content": result}

@@ -1,5 +1,7 @@
 import re
 import uuid
+import os, sys
+sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 from prompt import system_prompt
 
 class Agent:
@@ -9,6 +11,9 @@ class Agent:
 
     def createChatName(self, chatmng, client, chatHistory):
         return chatmng(client)
+
+    def __filter_by_key_value(self, dict_list, key, value):
+        return [d for d in dict_list if d.get(key) == value]
 
     def runAgent(self, userId, client, tool_regist, prompt, showProcess=False, toolList=[], streaming=False, chatHistory=None):
         System_prompt = system_prompt.setSystemPrompt(tool_regist.get_tool_info(toolList))
@@ -21,9 +26,10 @@ class Agent:
             chatHistory.append({ "role": "user", "content": prompt, "type":"conversation", "key" : user_key })
 
 
+        filtered_chatHistory = self.__filter_by_key_value(chatHistory, 'type', 'conversation')
         messages = [
             { "role": "system", "content": System_prompt, "type":"description" ,"key":system_key },
-            *chatHistory
+            *filtered_chatHistory
         ]
 
         end_strs = ["Response To Human", "Input: "]
@@ -51,11 +57,12 @@ class Agent:
                     if all(cond_str in result_response for cond_str in end_strs) and streaming == True:
                         yield response_text
 
-            if showProcess == True:
-                yield result_response  
+            if showProcess == True and "Action: Response To Human" not in result_response:
+                yield f"~{result_response}~ \n"
 
 
-            addChatHistory.append({"role":"system", "content":result_response, "type":"description", "key":system_key})
+            if "Action: Response To Human" not in result_response: 
+                addChatHistory.append({"role":"system", "content":result_response, "type":"description", "key":system_key})
             if streaming == False and "Action: Response To Human" in result_response:
                 yield f"> {result_response.split('Action Input:')[1]}"
 
@@ -69,7 +76,7 @@ class Agent:
                 break
             observation = tool(action_input[-1],userId=userId)
             if showProcess == True:
-                yield f"Observation: {observation}"
+                yield f"~{observation}~ \n"
 
             addChatHistory.append({"role":"system", "content":f"Observation: {observation}", "type":"description" ,"key":system_key})
 
@@ -93,9 +100,9 @@ if __name__ == "__main__":
     chatMongo = ControlMongo(username=getApiKey("MONGODB_USERNAME"),password=getApiKey("MONGODB_PASSWORD"),dbName="tomato_server", collName="chatHistory")
     codeArchiveMongo = ControlMongo(username=getApiKey("MONGODB_USERNAME"),password=getApiKey("MONGODB_PASSWORD"),dbName="tomato_server", collName="codeArchive")
     client = OpenAI(api_key=getApiKey("OPENAI_API_KEY"))
-    redisClient = redis.Redis(host='redis_containerDev', port=6379)
+    redisClient = redis.Redis(host=getApiKey("REDIS_URL"), port=getApiKey('REDIS_PORT'))
     minio = ControlMinio(getApiKey("MINIO_ENDPOINT"), "gptarchive", getApiKey("MINIO_ACCESS_KEY"), getApiKey("MINIO_SECRET_KEY"))
-    userInfo = {"user_uid":"adbfcbcb-5413-409c-a267-f43ee700575a", "chatId":"zxca"} 
+    userInfo = {"user_uid":"37MYFC8L9B4MYIBLMIOC", "chatId":"zxczxc"} 
     chatmng = ChatManager()
     
     if len(mongoResult := codeArchiveMongo.selectDB({"userId":userInfo["user_uid"]})) > 0:
@@ -129,7 +136,7 @@ if __name__ == "__main__":
                                 client, 
                                 toolRegist,
                                 inputStr, 
-                                showProcess=False, 
+                                showProcess=True, 
                                 toolList=["search"], 
                                 streaming=False,
                                 chatHistory=chatHistory
