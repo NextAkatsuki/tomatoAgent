@@ -1,6 +1,5 @@
 from .registry import ToolRegistry 
 from .GPTArchive import GPTArchive
-from util.controlMinio import ControlMinio
 from googleapiclient.discovery import build
 import os
 from util.apiKey import getApiKey
@@ -9,7 +8,7 @@ from util.apiKey import getApiKey
 def toolsInitial(mongo, redis, minio):
     # 인스턴스 생성
     tool_regist = ToolRegistry()
-    gptArchive = GPTArchive(mongo, redis, ControlMinio)
+    gptArchive = GPTArchive(mongo, redis, minio)
 
 
     @tool_regist.register(
@@ -26,22 +25,28 @@ def toolsInitial(mongo, redis, minio):
 
 
     @tool_regist.register(
-        alias="search_code", 
+        alias="gptArchive_code", 
         description="If I ask about the summarized code, You should find it and answer it.",
-        prompt="Answer only the content that came out. If the resulting code is different from the question, answer 'No Inquiry'."
+        prompt="""
+            Answer only the content that came out. If the resulting code is different from the question, answer 'No Inquiry'.
+            Answer format is Here
+            <language>```
+                <code>
+            ```
+        """
     )
     def __searchCode(query, userId=""):
-        result = gptArchive.searchContent(query, "code", userId)
+        result = gptArchive.searchContent(query, userId, "code")
         return result
 
 
     @tool_regist.register(
-        alias="search_content", 
+        alias="gptArchive_content", 
         description="",
         prompt=""
     )
     def __searchContent(query, userId=""):
-        result = gptArchive.searchContent(query, "content", userId)
+        result = gptArchive.searchContent(query, userId, "url")
         return result
 
     return tool_regist

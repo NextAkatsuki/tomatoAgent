@@ -3,6 +3,7 @@ from fastapi.responses import StreamingResponse
 
 from pydantic import BaseModel
 from typing import List, Optional, Dict
+import json
 
 import sys,os 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
@@ -23,23 +24,21 @@ inputContents 구조
         id: '63da1b42-9747-4983-a8cd-9be6632d9563'
     },
 """
-class addContents(BaseModel):
-    inputContents: List[Dict]
-    userId: str 
-    category: str 
+class addContent(BaseModel):
+    inputContent: Dict
+    token: str
 
 class removeAllContents(BaseModel):
-    userId: str
+    token: str
     category: str
 
 class removeContents(BaseModel):
-    userId: str
+    token: str
     contentId: str
     category: str
 
 class selectContents(BaseModel):
-    userId: str
-    category: str
+    token: str
 
 @archive_api.on_event("startup")
 def startupEvent():
@@ -48,26 +47,39 @@ def startupEvent():
 
 @archive_api.post("/add")
 async def addContent(
-    request:Request,
-    contents: addContents
+    content: addContent,
+    redisClient = Depends(redisClient)
 ):
-    inputContents = contents.inputContents
-    userId = contents.userId
-    category = contents.category
-    result, msg = archive.addMultiContent(inputContents, userId, category)
-    if result:
-        return {"success": True}
-    else:
-        return {"success": False, "msg": msg}
+    inputContent = content.inputContent
+    token = content.token
 
-@archive_api.get("/selectContents")
+    if not api_pass(token):
+        return {"success": False, "msg":"세션이 만료된 사용자입니다"}
+
+    if "query" in inputContent and "category" in inputContent:
+        userId = json.loads(redisClient.get(f"token:{token}").decode('utf-8'))["user_id"]
+
+        print(inputContent)
+        result, msg = archive.addContent(inputContent, userId)
+        if result:
+            return {"success": True}
+        else:
+            return {"success": False, "msg": msg}
+    else:
+        return {"success": False, "msg": "입력 딕셔너리 형태가 잘못됐습니다"}
+
+@archive_api.post("/get")
 async def selectContents(
-    request:Request,
-    contents: selectContents
+    contents: selectContents,
+    redisClient = Depends(redisClient)
 ):
-    userId = contents.userId
-    category = contents.category
-    return {"success": True, "content": archive.selectAllContent(userId, category)}
+    token = contents.token
+
+    if not api_pass(token):
+        return {"success": False, "msg":"세션이 만료된 사용자입니다"}
+
+    userId = json.loads(redisClient.get(f"token:{token}").decode('utf-8'))["user_id"]
+    return {"success": True, "content": archive.selectAllContent(userId)}
 
 # @archive_api.post("/update")
 # async def updateContent():
@@ -76,12 +88,17 @@ async def selectContents(
 
 @archive_api.post("/remove")
 async def removeContent(
-    request:Request,
-    contents: removeContents
+    contents: removeContents,
+    redisClient = Depends(redisClient)
 ):
-    userId = contents.userId
     contentId = contents.contentId
     category = contents.category
+    token = contents.token
+
+    if not api_pass(token):
+        return {"success": False, "msg":"세션이 만료된 사용자입니다"}
+
+    userId = json.loads(redisClient.get(f"token:{token}").decode('utf-8'))["user_id"]
     result, msg = archive.removeContent(contentId, userId, category)
     if result:
         return {"success": True}
@@ -90,11 +107,16 @@ async def removeContent(
 
 @archive_api.post("/allremove")
 async def allRemoveContent(
-    request:Request,
-    contents: removeAllContents
+    contents: removeAllContents,
+    redisClient = Depends(redisClient)
 ):
-    userId = contents.userId 
     category = contents.category
+    token = contents.token
+
+    if not api_pass(token):
+        return {"success": False, "msg":"세션이 만료된 사용자입니다"}
+
+    userId = json.loads(redisClient.get(f"token:{token}").decode('utf-8'))["user_id"]
     result, msg = archive.allRemoveContent(userId,category)
     if result:
         return {"success": True}

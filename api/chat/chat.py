@@ -37,6 +37,7 @@ class newChatBase(BaseModel):
 class createChatNameBase(BaseModel):
     getChatHistory: list
     chat_uid: str
+    token: str
     
 
 class deleteChatOption(BaseModel):
@@ -64,8 +65,7 @@ def startupEvent():
 @chat_api.post("/newchat")
 async def newChat(
             chat:newChatBase,
-            redisClient=Depends(redisClient),
-            mongo=Depends(mongo)):
+            redisClient=Depends(redisClient)):
     chat_uid = str(uuid.uuid4())
     token = chat.token
     if not api_pass(token):
@@ -73,12 +73,7 @@ async def newChat(
     try:
         getSID = chat.token
         user = json.loads(redisClient.get(f"token:{getSID}").decode('utf-8'))
-        redis_chatid = f"{getSID}_{chat_uid}"
-        redisClient.set(redis_chatid,json.dumps([]))
-        mongo.coll.update_one(
-                    {"user_id":user.get("user_id")},
-                    {"$addToSet":{"chatHistory":chat_uid}}
-                    )
+
     except Exception as e:
         return {"success": False, "msg": e}
     else:
@@ -104,7 +99,7 @@ async def chat(
         try:
             getSID = cookie
             user = json.loads(redisClient.get(f"token:{getSID}").decode('utf-8'))
-            userName = user.get("userName")
+            userId = user.get("user_id")
                                       
             redisChatId = f"{getSID}_{chat_uid}"
             redisChatHistory = redisClient.get(redisChatId)
@@ -112,18 +107,17 @@ async def chat(
                 chatHistory = None
             else:
                 chatHistory = json.loads(redisChatHistory.decode('utf-8'))
-            print(chatHistory)
 
             answer = []
 
             async def system_answer(agent):
                 for msg in agent.runAgent(
-                                    userName,
+                                    userId,
                                     client,
                                     toolRegist,
                                     q,
                                     showProcess=True,
-                                    toolList=["search"],
+                                    toolList=toolList,
                                     streaming=True,
                                     chatHistory = chatHistory
                                     ):
@@ -148,10 +142,13 @@ async def chat(
 async def createChatName(
         createchat:createChatNameBase,
         chatmng=Depends(ChatManager),
+        userMongo=Depends(mongo),
         chatMongo=Depends(chatMongo),
-        client=Depends(openaiClient)
+        client=Depends(openaiClient),
+        redisClient=Depends(redisClient)
     ):
     chat_uid = createchat.chat_uid
+    token = createchat.token
     chatHistory = createchat.getChatHistory
 
     print(chatHistory)
@@ -160,10 +157,15 @@ async def createChatName(
         return {"success": False, "msg": "generate name failed"}
     else:
         try:
+            user = json.loads(redisClient.get(f"token:{token}").decode("utf-8"))
             chatMongo.updateDB(
                             {"chat_uid" : chat_uid}, 
                             {"chat_name": result}, 
                             isUpsert=True) 
+            userMongo.coll.update_one(
+                    {"user_id":user.get("user_id")},
+                    {"$addToSet":{"chatHistory":{"chat_id":chat_uid,"chat_name":result}}}
+                    )
         except Exception as e:
             return {"success": False, "msg": f"chatName update DB Error: {e}"}
         else:
@@ -182,14 +184,9 @@ async def getChatList(
         user = json.loads(redisClient.get(f"token:{token}").decode('utf-8'))
     except Exception as e:
         return {"success": False, "msg": f"redis Error: {e}"}
-    result = []
-
-    for chat in user['chatHistory']:
-        mongoResult = chatMongo.selectDB({"chat_uid":chat})
-        if len(mongoResult) == 1:
-            result.append({"chat_name":mongoResult[0]["chat_name"], "chat_id":mongoResult[0]["chat_uid"]})
-        else:
-            print("error") #for debugging
+    
+    result = user["chatHistory"]
+    
     return {"success": True, "content":result}
 
 
@@ -247,10 +244,12 @@ async def deleteChat(
 
     #user정보의 chatHistory 내용 수정 
     userChatList = getuserMongoResult[0]['chatHistory']
-    userChatList.remove(chat_uid)
+    # 리스트에서 조건에 맞는 요소 제거
+    filtered_userChatList = [item for item in data if item.get("chat_id") != chat_uid]
+    # userChatList.remove(chat_uid)
 
     chatMongoResult = chatMongo.deleteDB({"chat_uid": chat_uid}) #chatHistory
-    userMongoResult = mongo.updateDB({"user_id": userId},{"chatHistory": userChatList}) #Users
+    userMongoResult = mongo.updateDB({"user_id": userId},{"chatHistory": filtered_userChatList}) #Users
 
     if chatMongoResult[0] and userMongoResult:
         try:
