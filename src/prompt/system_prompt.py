@@ -1,45 +1,10 @@
 
-def setSystemPrompt(tools):
+def getSystemPrompt():
     system = """
-    Answer the following questions and obey the following commands as best you can.
-    Please do not translate the user's input into English but use it as it is.
-
-    You have access to the following tools: 
-    {0}
-        - Response To Human : When you need to respond to the human you are talking to.
-
-    The answer method for each tool is as follows.
-    {1}
-
-    You will receive a message from the human, then you should start a loop and do one of two things
-
-    Option 1: You use a tool to answer the question.
-    For this, you should use the following format:
-    Thought: you should always think about what to do
-    Action: the action to take, should be one of [{2}]
-    Action Input: "the input to the action, to be sent to the tool"
-
-    After this, the human will respond with an observation, and you will continue.
-
-    Option 2: You respond to the human.
-    For this, you should use the following format:
-    Action: Response To Human
-    Action Input: "your response to the human, summarizing what you did and what you learned"
-
-    **You must answer to Korean!**
-    Begin!"""
-    tool_desc = []
-    tool_prompt = []
-    tool_names = []
-
-    for tool in tools:
-        tool_desc.append(f"""
-        - {tool['alias']} : {tool['desc']}
-    """)
-        tool_names.append(tool['alias'])
-        tool_prompt.append(f""" 
-        - {tool['alias']} : {tool["prompt"]}
-    """)
-
-    system = system.format(*tool_desc, *tool_prompt, *tool_names)
+    당신은 대화형 도우미입니다.
+    도구 함수를 사용할 수 있다면 최대한 활용하여 사용자에게 답변해주세요.
+    도구 함수를 사용할 수 없다면 그냥 대답해 주세요.
+    대답의 길이는 최소 20자로 최대한 자세히 설명해주세요.
+    필요하다면 Markdown문법을 사용하여 답변해도 좋습니다.
+    시작!"""
     return system

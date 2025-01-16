@@ -8,8 +8,8 @@ from typing import List, Optional
 
 import sys,os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from dependencies import mongo,chatMongo,openaiClient,GPTArchiveMongo, Minio, redisClient
-from src.main.agent import Agent
+from dependencies import mongo,chatMongo,openaiClient,GPTArchiveMongo, Minio, redisClient, redisGet, redisSet
+from src.main.chat_system import ChatSystem
 from src.main.chat_manager import ChatManager
 from src.util import getApiKey
 from tools import toolsInitial
@@ -72,7 +72,7 @@ async def newChat(
         return {"success": False, "msg":"세션이 만료된 사용자입니다"}
     try:
         getSID = chat.token
-        user = json.loads(redisClient.get(f"token:{getSID}").decode('utf-8'))
+        user = redisGet(redisClient, f"token:{getSID}")
 
     except Exception as e:
         return {"success": False, "msg": e}
@@ -84,7 +84,7 @@ async def newChat(
 async def chat(
                 chat:Chat,
                 redisClient=Depends(redisClient),
-                agent=Depends(Agent),
+                chatSystem=Depends(ChatSystem),
                 chatMongo=Depends(chatMongo),
                 client=Depends(openaiClient)):
 
@@ -98,40 +98,48 @@ async def chat(
     else:
         try:
             getSID = cookie
-            user = json.loads(redisClient.get(f"token:{getSID}").decode('utf-8'))
+            user = redisGet(redisClient, f"token:{getSID}")
             userId = user.get("user_id")
                                       
             redisChatId = f"{getSID}_{chat_uid}"
-            redisChatHistory = redisClient.get(redisChatId)
+            redisChatHistory = redisGet(redisClient, redisChatId)
             if redisChatHistory is None:
                 chatHistory = None
             else:
-                chatHistory = json.loads(redisChatHistory.decode('utf-8'))
+                chatHistory = redisChatHistory
 
             answer = []
 
-            async def system_answer(agent):
-                for msg in agent.runAgent(
-                                    userId,
-                                    client,
-                                    toolRegist,
-                                    q,
-                                    showProcess=True,
-                                    toolList=toolList,
-                                    streaming=True,
-                                    chatHistory = chatHistory
-                                    ):
+            async def system_answer(chatSystem):
+                if len(toolList) == 0:
+                    for msg in chatSystem.runChat(
+                        client,
+                        q,
+                        streaming=True,
+                        chatHistory = chatHistory
+                    ):
+                        yield msg
+                else:
+                    for msg in chatSystem.runAgent(
+                                        userId,
+                                        client,
+                                        toolRegist,
+                                        q,
+                                        showProcess=True,
+                                        toolList=toolList,
+                                        streaming=True,
+                                        chatHistory = chatHistory
+                                        ):
 
-                    yield msg
+                        yield msg
 
                 chatMongo.updateDB(
                             {"chat_uid" : chat_uid}, 
-                            {"chatHistory": agent.getChatHistory()}, 
+                            {"chatHistory": chatSystem.getChatHistory()}, 
                             isUpsert=True) 
 
-                redisClient.set(redisChatId,json.dumps(agent.getChatHistory()))
-                redisClient.expire(redisChatId, 3600)
-            return StreamingResponse(system_answer(agent),media_type="text/event_stream")
+                redisSet(redisClient, redisChatId, chatSystem.getChatHistory())
+            return StreamingResponse(system_answer(chatSystem),media_type="text/event_stream")
 
         except Exception as e:
             print({e})
@@ -152,12 +160,12 @@ async def createChatName(
     chatHistory = createchat.getChatHistory
 
     print(chatHistory)
-    result = chatmng.createChatName(client, chatHistory)
+    result = chatmng.createChatName(client, chatHistory) #여기 수정해야함 (conversaation만 넘어가도록)
     if result == "":
         return {"success": False, "msg": "generate name failed"}
     else:
         try:
-            user = json.loads(redisClient.get(f"token:{token}").decode("utf-8"))
+            user = redisGet(redisClient, f"token:{token}")
             chatMongo.updateDB(
                             {"chat_uid" : chat_uid}, 
                             {"chat_name": result}, 
@@ -166,10 +174,16 @@ async def createChatName(
                     {"user_id":user.get("user_id")},
                     {"$addToSet":{"chatHistory":{"chat_id":chat_uid,"chat_name":result}}}
                     )
+            user["chatHistory"].append({"chat_id":chat_uid,"chat_name":result})
+            
         except Exception as e:
             return {"success": False, "msg": f"chatName update DB Error: {e}"}
         else:
-            return {"success": True, "chatName": result}
+            redisResult = redisSet(redisClient, f"token:{token}", user)
+            if redisResult:
+                return {"success": True, "chatName": result}
+            else:
+                return {"success": False, "msg": "Redis Error"}
 
 @chat_api.post("/getChatList")
 async def getChatList(
@@ -180,10 +194,10 @@ async def getChatList(
     token = chatList.token
     if not api_pass(token):
         return {"success": False, "msg":"세션이 만료된 사용자입니다"}
-    try:
-        user = json.loads(redisClient.get(f"token:{token}").decode('utf-8'))
-    except Exception as e:
-        return {"success": False, "msg": f"redis Error: {e}"}
+
+    user = redisGet(redisClient, f"token:{token}")
+    if user == None:
+        return {"success": False, "msg": f"redis Error"}
     
     result = user["chatHistory"]
     
@@ -206,12 +220,9 @@ async def getChatContent(
     # def filter_by_key_value(dict_list, key, value):
     #     return [d for d in dict_list if d.get(key) == value]
 
-
-    if redisClient.exists(redisChatId): #redis에 cache가 있을경우
-        redisResult = json.loads(redisClient.get(redisChatId).decode('utf-8'))
-        # result = filter_by_key_value(redisResult, "type", "conversation") #대화만 가져오도록 필터링
-        result = redisResult
-        return {"success":True, "content": result}
+    redisResult = redisGet(redisClient, redisChatId)
+    if redisResult is not None: #redis에 cache가 있을경우
+        return {"success":True, "content": redisResult}
     else:
         mongoResult = chatMongo.selectDB({"chat_uid":chat_uid})
         if len(mongoResult) != 1:
@@ -219,9 +230,11 @@ async def getChatContent(
         
         # result = filter_by_key_value(mongoResult[0]['chatHistory'], "type", "conversation") #대화만 가져오도록 필터링
         result = mongoResult[0]['chatHistory']
-        redisClient.set(redisChatId,json.dumps(result))
-        redisClient.expire(redisChatId, 3600)
-        return {"success": True, "content": result}
+        setRedisResult = redisSet(redisClient, redisChatId, result)
+        if setRedisResult:
+            return {"success": True, "content": result}
+        else:
+            return {"success": False, "msg": "redis set error"}
     
 
 @chat_api.post("/chatDelete")
@@ -239,14 +252,19 @@ async def deleteChat(
     if not api_pass(token):
         return {"success": False, "msg":"세션이 만료된 사용자입니다"}
     
-    userId = json.loads(redisClient.get(f"token:{token}").decode("utf-8"))["user_id"]
+    user = redisGet(redisClient, f"token:{token}")
+    userId = user["user_id"]
     getuserMongoResult = mongo.selectDB({"user_id": userId})
 
     #user정보의 chatHistory 내용 수정 
     userChatList = getuserMongoResult[0]['chatHistory']
     # 리스트에서 조건에 맞는 요소 제거
-    filtered_userChatList = [item for item in data if item.get("chat_id") != chat_uid]
-    # userChatList.remove(chat_uid)
+    filtered_userChatList = [item for item in userChatList if item.get("chat_id") != chat_uid]
+    user["chatHistory"] = filtered_userChatList
+
+    redisResult = redisSet(redisClient, f"token:{token}", user)
+    if not redisResult:
+        return {"success": False, "msg": "Redis Error"}
 
     chatMongoResult = chatMongo.deleteDB({"chat_uid": chat_uid}) #chatHistory
     userMongoResult = mongo.updateDB({"user_id": userId},{"chatHistory": filtered_userChatList}) #Users

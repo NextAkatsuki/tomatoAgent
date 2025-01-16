@@ -3,11 +3,27 @@ import sys, os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.util import getApiKey, ControlMongo, ControlMinio
 from openai import OpenAI
+import json
 # from src.tools import toolsInitial
 
 import redis
 def redisClient():
     return redis.Redis(host=getApiKey("REDIS_URL"),port=getApiKey("REDIS_PORT"))
+
+def redisGet(client, key):
+    if client.exists(key):
+        return json.loads(client.get(key).decode('utf-8'))
+    else:
+        return None
+
+def redisSet(client, key, value):
+    try:
+        client.set(key, json.dumps(value))
+        client.expire(key, 3600) # 1시간
+        return True 
+    except Exception as e:
+        print(e)
+        return False
 
 # MongoDB 인스턴스 생성 함수
 def mongo():
