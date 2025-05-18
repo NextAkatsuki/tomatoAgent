@@ -6,7 +6,8 @@ from util.apiKey import getApiKey
 from sentence_transformers import SentenceTransformer
 
 def getEmbeddingModel():
-    model = SentenceTransformer("BAAI/bge-m3", trust_remote_code=True, cache_folder="./model/embedding")
+    # model = SentenceTransformer("BAAI/bge-m3", trust_remote_code=True, cache_folder="./model/embedding")
+    model = SentenceTransformer("./model/embedding/models--BAAI--bge-m3/snapshots/5617a9f61b028005a4858fdac845db406aefb181", trust_remote_code=True)
     return model
 
 def toolsInitial(mongo, redis, minio, gptArchive):
