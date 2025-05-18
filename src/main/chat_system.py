@@ -67,10 +67,16 @@ class ChatSystem:
             chatHistory.append({ "role": "user", "content": prompt, "type":"conversation", "key" : user_key })
 
 
-        filtered_chatHistory = self.__filter_by_key_value(chatHistory, 'type', 'conversation')
-        messages = [
+        filtered_chatHistory = self.__filter_by_key_value(chatHistory, 'type', 'conversation') 
+        
+        filtered_messages = [
             { "role": "system", "content": System_prompt, "type":"description" ,"key":system_key },
             *filtered_chatHistory
+        ]
+
+        messages = [
+            { "role": "system", "content": System_prompt, "type":"description" ,"key":system_key },
+            *chatHistory
         ]
 
 
@@ -86,7 +92,7 @@ class ChatSystem:
 
             response = client.chat.completions.create(
                 model="gpt-4",
-                messages=messages,
+                messages=filtered_messages,
                 functions=tool_regist.get_funcInfos(toolList),
                 function_call="auto",
                 stream = True)
@@ -120,22 +126,24 @@ class ChatSystem:
                     )
                     if showProcess:
                         yield f"~도구사용 결과: {function_response}~"
-                    messages.append(
-                        {
+
+                    appendInfo = {
                             "role": "function",
                             "name": function_name,
                             "type":"description",
                             "key":system_key,
                             "content": function_response,
-                        }
-                    )
+                    }
+                    messages.append(appendInfo)
+                    filtered_messages.append(appendInfo)
 
                 if res.choices[0].finish_reason == "stop":
                     isChatFinish = True
 
             else:
                 if result_response != "":
-                    messages.append({"role":"system", "content":result_response, "type":"conversation", "key":system_key})
+                    messages.append({"role":"assistant", "content":result_response, "type":"conversation", "key":system_key})
+                    filtered_messages.append({"role":"assistant", "content":result_response, "type":"conversation", "key":system_key})
                     self.chatHistory = messages[1:]
                 
                 if streaming == False:

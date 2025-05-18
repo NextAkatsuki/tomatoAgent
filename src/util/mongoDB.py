@@ -9,7 +9,7 @@ class ControlMongo:
     def __init__(self, username, password, dbName, collName):
         try:
             conn = pymongo.MongoClient(host=getApiKey("MONGODB_URL"), port=int(getApiKey("MONGODB_PORT")), username=username, password=password)
-            print(int(getApiKey("MONGODB_PORT")))
+            # print(int(getApiKey("MONGODB_PORT")))
             db = conn.get_database(dbName)
             self.coll = db.get_collection(collName)
         except Exception as e:

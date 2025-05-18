@@ -25,4 +25,5 @@ createServer.sh
 .venv
 GPTArchive.md
 __pycache__
+model
 수정사항.md

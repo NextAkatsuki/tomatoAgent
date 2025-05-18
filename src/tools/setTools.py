@@ -3,11 +3,14 @@ from .GPTArchive import GPTArchive
 from googleapiclient.discovery import build
 import os
 from util.apiKey import getApiKey
+from sentence_transformers import SentenceTransformer
 
+def getEmbeddingModel():
+    model = SentenceTransformer("BAAI/bge-m3", trust_remote_code=True, cache_folder="./model/embedding")
+    return model
 
-def toolsInitial(mongo, redis, minio):
+def toolsInitial(mongo, redis, minio, gptArchive):
     # 인스턴스 생성
-    gptArchive = GPTArchive(mongo, redis, minio)
     tool_regist = ToolRegistry()
 
     @tool_regist.register(

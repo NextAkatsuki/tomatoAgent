@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -7,8 +7,12 @@ import uvicorn
 import pymongo
 import sys, os
 import redis
+from typing import Dict
+
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+from dependencies import Minio, redisClient, GPTArchiveMongo
+from tools import GPTArchive, getEmbeddingModel, toolsInitial
 #from src.util import ControlMongo,getApiKey
 #from router.dbRouter import register, login
 
@@ -32,13 +36,15 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
         if request.method == "OPTIONS":
             response = Response(status_code=200)
             response.headers["Access-Control-Allow-Origin"] = request.headers.get("origin", "")
-            response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+            response.headers["Access-Control-Allow-Methods"] = "*"
             response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
             response.headers["Access-Control-Allow-Credentials"] = "true"
             return response
         
         response = await call_next(request)
         response.headers["Access-Control-Allow-Origin"] = request.headers.get("origin", "")
+        response.headers["Access-Control-Allow-Methods"] = "*"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
         response.headers["Access-Control-Allow-Credentials"] = "true"
         return response
 
@@ -64,6 +70,14 @@ app.include_router(archive_api, prefix='/api/archive')
 #def startupEvent():
 #    app.state.mongo = ControlMongo(username=getApiKey("MONGODB_USERNAME"),password=getApiKey("MONGODB_PASSWORD"),dbName=("tomato_server"),collName="Users")
 
+@app.on_event("startup")
+async def startup():
+    gptArchive = GPTArchive(mongo=GPTArchiveMongo(), redis=redisClient(), minio=Minio(), embeddingModel=getEmbeddingModel())
+    app.state.gptArchive = gptArchive
+    app.state.toolRegist = toolsInitial(GPTArchiveMongo(), redisClient(), Minio(), gptArchive)
+
+
+
 @app.get("/")
 def root():
     return {"message" : "Hello World"}
@@ -86,3 +100,17 @@ async def track_memory_usage(request:FastapiRequest,call_next):
     print("startmemory", start_memory)
     print("endmemory", end_memory)
     return response
+
+@app.get("/r")
+async def asdf(redisClient=Depends(redisClient)):
+    keys = redisClient.keys("*")  # 모든 키 가져오기
+    result = {}
+
+    for key in keys:
+        value = redisClient.get(key)  # 단순 String 타입이면 get
+        if value is None:
+            # get이 안되면 hash일 수 있으니 hgetall 시도
+            value = redisClient.hgetall(key)
+        result[key] = value
+
+    return result

@@ -19,7 +19,6 @@ archiveMongo = ControlMongo(username=getApiKey("MONGODB_USERNAME"),password=getA
 lemmatizer = Lemmatizer()
 okt = Okt()
 
-
 #유저 agent를 Redis에 저장
 def storeUserSession(getObject, redisKey, userId):
     userRedisKey = f"{redisKey}:{userId}"

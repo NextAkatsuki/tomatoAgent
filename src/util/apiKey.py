@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 import os
 
 envStatus = os.getenv("ENV")
+print(envStatus)
 
 if envStatus == "prod":
     load_dotenv(dotenv_path=".env", override=True, verbose=True)

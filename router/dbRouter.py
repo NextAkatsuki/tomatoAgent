@@ -22,7 +22,7 @@ def __generateToken():
 
 def register(mongo, userName:str, password:str):
     if len(mongo.selectDB({"userName":userName})) != 0:
-        return {"success": False, "msg": "이미 존재하는 사용자입니다."}
+        return {"status":409, "msg":"이미 존재하는 사용자입니다."}
     else:
         randomChoice = random.choice(['a', 'b', 'c', 'd'])
         encryptPassword = password_encrypt(password.encode(), randomChoice)
@@ -31,15 +31,17 @@ def register(mongo, userName:str, password:str):
             "userName": userName,
             "password": encryptPassword,
             "key": randomChoice,
-            "token": "",
             "chatHistory": []
         }
         mongo.insertDB(user)
-        return {"success": True, "msg":"회원가입 성공", "user": user}
+
+        exceptionData = {"password", "key"}
+        data = {k: v for k, v in user.items() if k not in exceptionData}
+        return {"status": 201, "msg": "회원가입 성공", "user": data}
 
 def login(mongo, userName:str, password:str):
     if len(result := mongo.selectDB({"userName":userName})) == 0:
-        return {"success": False, "msg": "No ID"}
+        return {"status": 401, "msg": "존재하지 않는 사용자입니다."}
     else:
         userInfo = result[0]
         userInfo["user_id"] = str(userInfo["user_id"])
@@ -54,32 +56,10 @@ def login(mongo, userName:str, password:str):
                     "user_id" : userInfo["user_id"],
                     "chatHistory" : userInfo["chatHistory"],
                     }
-            return  {"success": True, "token" : token, "user": user, "msg": "Login Success"}
+            # return  {"success": True, "token" : token, "user": user, "msg": "Login Success"}
+            return {"status": 200, "msg": "로그인 성공", "token": token, "user": user}
         else: 
-            return {"success": False, "msg":"Wrong password"}
-  
-#backup
-# def login(mongo, userName:str, password:str):
-#     if len(result := mongo.selectDB({"userName":userName})) == 0:
-#         return {"success": False, "msg": "No ID"}
-#     else:
-#         userInfo = result[0]
-#         userInfo["_id"] = str(userInfo["_id"])
-#         key = userInfo["key"]
-#         encryptPassword = userInfo["password"]
-#         decryptPassword = password_decrypt(encryptPassword, key).decode()
-
-#         if password == decryptPassword:
-#             token = __generateToken()
-#             mongo.updateDB({"userName":userName}, {"token":token})
-#             user = {
-#                     "userName": userInfo["userName"],
-#                     "_id" : userInfo["_id"],
-#                     "chatHistory" : userInfo["chatHistory"],
-#                     }
-#             return  {"success": True, "token" : token, "user": user, "msg": "Login Success"}
-#         else: 
-#             return {"success": False, "msg":"Wrong password"}
+            return {"status": 401, "msg": "비밀번호가 일치하지 않습니다."}
 
 def logout(token:str):
     r = redisClient()

@@ -1,0 +1,2 @@
+code server 도커 명령어 
+sudo docker run -it -d --name tomato-dev -v /var/services/homes/oldentomato/vscode:/main -e ENV=dev -p 8443:8443 -p 1542:1542 tomato-code:latest
